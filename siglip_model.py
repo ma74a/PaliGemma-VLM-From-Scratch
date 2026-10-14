@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from typing import Tuple
+
 class SiglipVisionConfig:
     def __init__(
         self,
@@ -78,6 +80,79 @@ class SiglipVisionEmbeddings(nn.Module):
         # [Batch_Size, Num_Patches, Embed_Dim]
         return embeddings
         
+class SiglipAttention(nn.Module):
+    def __init__(self, config: SiglipVisionConfig):
+        super().__init__()
+        self.embed_dim = config.hidden_size
+        self.num_heads = config.num_attention_heads
+        self.head_dim = self.embed_dim // self.num_heads
+        self.scale = (self.head_dim) ** -.05 # Equivalent to 1 / sqrt(self.head_dim)
+        self.attention_dropout = config.attention_dropout
+        
+        self.q_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.k_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        
+    def forward(self, hidden_state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        # hidden_state shape -> [B, N, D]
+        batch_size, num_patches, _ = hidden_state.shape
+        
+        # shape -> [B, N, D]
+        query_states = self.q_proj(hidden_state)
+        # shape -> [B, N, D]
+        key_states = self.k_proj(hidden_state)
+        # shape -> [B, N, D]
+        value_states = self.v_proj(hidden_state)
+        
+        # split the embed_dim across each head by embed_dim // num_heads
+        # shape after split -> [B, N, num_heads, head_dim]
+        # then transpose num_heads and N so shape -> [B, num_heads, N, head_dim]
+        query_states = query_states.veiw(batch_size, num_patches, self.num_heads, self.head_dim).transpose(1, 2)
+        key_states = key_states.veiw(batch_size, num_patches, self.num_heads, self.head_dim).transpose(1, 2)
+        value_states = value_states.veiw(batch_size, num_patches, self.num_heads, self.head_dim).transpose(1, 2)
+        
+        # calculate the attention using Q*K^T / sqrt(d_k)
+        # Q ->                 [B, num_heads, N, head_dim]
+        # K after transpose -> [B, num_heads, head_dim, N]
+        # shape -> [B, num_heads, N, N]
+        atten_weights = torch.matmul(query_states, key_states.transpose(2, 3)) * self.scale
+        
+        # check dims
+        if atten_weights.size() != (batch_size, self.num_heads, num_patches, num_patches):
+            raise ValueError(
+                f"Attention weights should be of size {(batch_size, self.num_heads, num_patches, num_patches)}, but is"
+                f" {atten_weights.size()}"
+            )
+        
+        # applying softmax
+        # shape -> [B, num_heads, N, N]
+        atten_weights = nn.functional.softmax(atten_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        # Apply dropout only during training
+        atten_weights = nn.functional.dropout(atten_weights, p=self.dropout, training=self.training)
+        
+        # atten_weights shape -> [B, num_head, N, N]
+        # V shape -> [B, num_heads, N, head_dim]
+        # output shape -> [B, num_heads, N, head_dim]
+        atten_outputs = torch.matmul(atten_weights, value_states)
+        # check dims
+        if atten_outputs.size() != (batch_size, self.num_heads, num_patches, self.head_dim):
+            raise ValueError(
+                f"`attn_output` should be of size {(batch_size, self.num_heads, num_patches, self.head_dim)}, but is"
+                f" {atten_outputs.size()}"
+            )
+            
+        # before transpose -> [B, num_heads, N, head_dim]
+        #  after transpose(2, 1) make it [B, N, num_heads, head_dim] -> swap N with num_heads
+        # view(batch_size, num_tokens, num_heads*head_dim)
+        atten_outputs = atten_outputs.transpose(2, 1).contiguous().view(batch_size, num_patches, self.num_heads*self.head_dim)
+        
+        # pass it to out proj
+        # shape -> [B, N, D]
+        atten_outputs = self.out_proj(atten_outputs)
+        
+        return atten_outputs
+
         
 class SiglipVisionTransformer(nn.Module):
     def __init__(self, config: SiglipVisionConfig):
