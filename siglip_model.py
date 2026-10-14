@@ -36,12 +36,25 @@ class SiglipVisionTransformer(nn.Module):
         self.encoder = SiglipEncoder(config)
         self.post_layernorm = nn.LayerNorm(embed_dim, eps=config.layer_norm_eps)
         
+    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        # pixel_values shape -> [B, C, H, W]
+        # after embeddings -> [B, num_patches, embed_dim]
+        hidden_state = self.emebeddings(pixel_values)
+        
+        # after encoder -> [B, num_patches, embed_dim]
+        last_hidden_state = self.encoder(hidden_state)
+        
+        # after layernorm -> [B, num_patches, embed_dim]
+        last_hidden_state = self.post_layernorm(last_hidden_state)
+        
+        return last_hidden_state
+        
 class SiglipVisionModel(nn.Module):
     def __init__(self, config: SiglipVisionConfig):
         super().__init__()
         self.vision_model = SiglipVisionTransformer(config)
         
-    def forward(self, pixel_values) -> torch.Tensor:
+    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
         # pixel_values shape -> [B, C, H, W]
         # after vision_model -> [B, num_patches, embed_dim]
         return self.vision_model(pixel_values)
