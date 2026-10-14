@@ -1,4 +1,5 @@
-
+import torch
+import torch.nn as nn
 
 class SiglipVisionConfig:
     def __init__(
@@ -24,3 +25,15 @@ class SiglipVisionConfig:
         self.layer_norm_eps = layer_norm_eps
         self.attention_dropout = attention_dropout
         self.num_image_tokens = num_image_tokens
+        
+        
+        
+class SiglipVisionModel(nn.Module):
+    def __init__(self, config: SiglipVisionConfig):
+        super().__init__()
+        self.vision_model = SiglipVisionTransformer(config)
+        
+    def forward(self, pixel_values) -> torch.Tensor:
+        # pixel_values shape -> [B, C, H, W]
+        # after vision_model -> [B, num_patches, embed_dim]
+        return self.vision_model(pixel_values)
