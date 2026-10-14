@@ -18,7 +18,7 @@ class SiglipVisionConfig:
         num_image_tokens: int = None
     ):
         self.hidden_size = hidden_size
-        self.iintermediate_size = intermediate_size
+        self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.num_channels = num_channels
@@ -154,6 +154,30 @@ class SiglipAttention(nn.Module):
         return atten_outputs
 
         
+class SiglipMLP(nn.Module):
+    def __init__(self, config: SiglipVisionConfig):
+        super().__init__()
+        self.fc1 = nn.Linear(
+            in_features=config.hidden_size, out_features=config.intermediate_size
+        )        
+        self.fc2 = nn.Linear(
+            in_features=config.intermediate_size, out_features=config.hidden_size
+        )
+        
+    def forward(self, hidden_state: torch.Tensor) -> torch.Tensor:
+        # hidden_state shape -> [B, N, D]
+        
+        # shape after -> [B, N, intermediate]
+        hidden_state = self.fc1(hidden_state)
+        
+        hidden_state = nn.functional.gelu(hidden_state, approximate="tanh")
+        
+        # shape after -> [B, N, D]
+        hidden_state = self.fc2(hidden_state)
+        
+        return hidden_state
+    
+    
 class SiglipVisionTransformer(nn.Module):
     def __init__(self, config: SiglipVisionConfig):
         super().__init__()
