@@ -28,6 +28,14 @@ class SiglipVisionConfig:
         
         
         
+class SiglipVisionTransformer(nn.Module):
+    def __init__(self, config: SiglipVisionConfig):
+        super().__init__()
+        embed_dim = config.hidden_size
+        self.emebeddings = SiglipVisionEmbeddings(config)
+        self.encoder = SiglipEncoder(config)
+        self.post_layernorm = nn.LayerNorm(embed_dim, eps=config.layer_norm_eps)
+        
 class SiglipVisionModel(nn.Module):
     def __init__(self, config: SiglipVisionConfig):
         super().__init__()
