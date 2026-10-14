@@ -26,6 +26,57 @@ class SiglipVisionConfig:
         self.attention_dropout = attention_dropout
         self.num_image_tokens = num_image_tokens
         
+class SiglipVisionEmbeddings(nn.Module):
+    def __init__(self, config: SiglipVisionConfig):
+        super().__init__()
+        self.embed_dim = config.hidden_size
+        self.image_size = config.image_size
+        self.patch_size = config.patch_size
+        
+        # this where we convert the image into series of patches
+        # where each patches has its own embed dim
+        self.patch_embbedings = nn.Conv2d(
+            in_channels=config.num_channels,
+            out_channels=self.embed_dim,
+            kernel_size=self.patch_size,
+            stride=self.patch_size,
+            padding="valid"
+        )
+        self.flatten = nn.Flatten(start_dim=2)
+        
+        self.num_patches = (self.image_size // self.patch_size) ** 2
+        # print(self.num_patches) # 196
+        # for each patch will be a position for it
+        self.num_positions = self.num_patches
+        self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim)
+        self.register_buffer(
+            "position_ids",
+            torch.arange(self.num_positions).expand((1, -1)),
+            persistent=False,
+        )
+        
+    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        # pixel_values shape -> [B, C, H, W]
+        # after conv layer will be [B, embed_dim, H/patch_size, W/patch_size]
+        patch_embedd = self.patch_embbedings(pixel_values)
+        # print(patch_embedd.shape)
+        
+        # then flatten it to be [B, embed_dim, H/patch_size*W/patch_size]
+        # then transpose last two dim
+        # will be of shape -> [B, N, D]
+        # B for batch_size
+        # N for num of patches
+        # D for embedd dim
+        embeddings = self.flatten(patch_embedd).transpose(1, 2)
+        # print(embeddings.shape)
+        
+        # then add position embeddings
+        # shape will be as it is [B, N, D]
+        embeddings = embeddings + self.position_embedding(self.position_ids)
+        # print(embeddings.shape)
+        
+        # [Batch_Size, Num_Patches, Embed_Dim]
+        return embeddings
         
         
 class SiglipVisionTransformer(nn.Module):
@@ -58,3 +109,10 @@ class SiglipVisionModel(nn.Module):
         # pixel_values shape -> [B, C, H, W]
         # after vision_model -> [B, num_patches, embed_dim]
         return self.vision_model(pixel_values)
+    
+    
+if __name__ == "__main__":
+    x = torch.randn(1, 3, 224, 224)
+    model = SiglipVisionEmbeddings(SiglipVisionConfig())
+    out = model(x)
+    
