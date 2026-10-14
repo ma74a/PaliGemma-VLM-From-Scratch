@@ -8,9 +8,13 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "numpy>=2.5.3",
     "pandas>=3.0.6",
+    "torch>=2.14.1",
+    "torchvision>=0.29.1",
 ]
 
 [tool.uv]
 package = false
+
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cpu"
